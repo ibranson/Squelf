@@ -67,7 +67,8 @@ class RealCameraController(private val context: Context) : CameraController {
                 maxZoom = zoomState?.maxZoomRatio ?: current.maxZoom,
                 zoomRatio = zoomState?.zoomRatio ?: current.zoomRatio,
                 minEv = if (expState.isExposureCompensationSupported) expRange.lower * expStep else 0f,
-                maxEv = if (expState.isExposureCompensationSupported) expRange.upper * expStep else 0f
+                maxEv = if (expState.isExposureCompensationSupported) expRange.upper * expStep else 0f,
+                isReady = true
             )
         }
     }
@@ -94,6 +95,41 @@ class RealCameraController(private val context: Context) : CameraController {
     }
 
     override fun adjustEv(delta: Float) = setEvStops(_state.value.evStops + delta)
+
+    override fun setFlashMode(mode: FlashMode) {
+        val cap = imageCapture
+        val cam = camera
+        when (mode) {
+            FlashMode.OFF -> {
+                cap?.flashMode = ImageCapture.FLASH_MODE_OFF
+                cam?.cameraControl?.enableTorch(false)
+            }
+            FlashMode.AUTO -> {
+                cap?.flashMode = ImageCapture.FLASH_MODE_AUTO
+                cam?.cameraControl?.enableTorch(false)
+            }
+            FlashMode.ON -> {
+                cap?.flashMode = ImageCapture.FLASH_MODE_ON
+                cam?.cameraControl?.enableTorch(false)
+            }
+            FlashMode.TORCH -> {
+                // Torch overrides per-shot flash; keep capture flash off so it doesn't double-fire.
+                cap?.flashMode = ImageCapture.FLASH_MODE_OFF
+                cam?.cameraControl?.enableTorch(true)
+            }
+        }
+        _state.update { it.copy(flashMode = mode) }
+    }
+
+    override fun cycleFlash() {
+        val next = when (_state.value.flashMode) {
+            FlashMode.OFF -> FlashMode.AUTO
+            FlashMode.AUTO -> FlashMode.ON
+            FlashMode.ON -> FlashMode.TORCH
+            FlashMode.TORCH -> FlashMode.OFF
+        }
+        setFlashMode(next)
+    }
 
     override suspend fun capture(): CaptureResult {
         val capture = imageCapture ?: return CaptureResult.Error("camera not ready")

@@ -29,7 +29,9 @@ class SettingsRepository(context: Context) {
         autoDatedFolder = prefs.getBoolean(KEY_AUTO_DATED, true),
         wifiOnlyUpload = prefs.getBoolean(KEY_WIFI_ONLY, true),
         isoAuto = prefs.getBoolean(KEY_ISO_AUTO, true),
-        showThumbnail = prefs.getBoolean(KEY_SHOW_THUMBNAIL, true)
+        showThumbnail = prefs.getBoolean(KEY_SHOW_THUMBNAIL, true),
+        burstFps = prefs.getInt(KEY_BURST_FPS, 2),
+        burstCount = prefs.getInt(KEY_BURST_COUNT, 5)
     )
 
     fun save(settings: SquelfSettings) {
@@ -43,6 +45,8 @@ class SettingsRepository(context: Context) {
             .putBoolean(KEY_WIFI_ONLY, settings.wifiOnlyUpload)
             .putBoolean(KEY_ISO_AUTO, settings.isoAuto)
             .putBoolean(KEY_SHOW_THUMBNAIL, settings.showThumbnail)
+            .putInt(KEY_BURST_FPS, settings.burstFps)
+            .putInt(KEY_BURST_COUNT, settings.burstCount)
             .apply()
     }
 
@@ -57,5 +61,7 @@ class SettingsRepository(context: Context) {
         const val KEY_WIFI_ONLY = "wifiOnlyUpload"
         const val KEY_ISO_AUTO = "isoAuto"
         const val KEY_SHOW_THUMBNAIL = "showThumbnail"
+        const val KEY_BURST_FPS = "burstFps"
+        const val KEY_BURST_COUNT = "burstCount"
     }
 }

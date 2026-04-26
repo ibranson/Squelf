@@ -34,6 +34,20 @@ class MockCameraController(private val context: Context) : CameraController {
 
     override fun adjustEv(delta: Float) = setEvStops(_state.value.evStops + delta)
 
+    override fun setFlashMode(mode: FlashMode) {
+        _state.update { it.copy(flashMode = mode) }
+    }
+
+    override fun cycleFlash() {
+        val next = when (_state.value.flashMode) {
+            FlashMode.OFF -> FlashMode.AUTO
+            FlashMode.AUTO -> FlashMode.ON
+            FlashMode.ON -> FlashMode.TORCH
+            FlashMode.TORCH -> FlashMode.OFF
+        }
+        setFlashMode(next)
+    }
+
     override suspend fun capture(): CaptureResult = withContext(Dispatchers.IO) {
         _state.update { it.copy(isCapturing = true) }
         val result = try {

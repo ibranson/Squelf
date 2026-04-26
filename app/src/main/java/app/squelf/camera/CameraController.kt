@@ -3,6 +3,8 @@ package app.squelf.camera
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 
+enum class FlashMode { OFF, AUTO, ON, TORCH }
+
 data class CameraState(
     val zoomRatio: Float = 1.0f,
     val minZoom: Float = 0.5f,
@@ -10,7 +12,9 @@ data class CameraState(
     val evStops: Float = 0f,
     val minEv: Float = -2.0f,
     val maxEv: Float = 2.0f,
-    val isCapturing: Boolean = false
+    val flashMode: FlashMode = FlashMode.OFF,
+    val isCapturing: Boolean = false,
+    val isReady: Boolean = false
 )
 
 sealed class CaptureResult {
@@ -24,5 +28,7 @@ interface CameraController {
     fun adjustZoom(delta: Float)
     fun setEvStops(stops: Float)
     fun adjustEv(delta: Float)
+    fun setFlashMode(mode: FlashMode)
+    fun cycleFlash()
     suspend fun capture(): CaptureResult
 }

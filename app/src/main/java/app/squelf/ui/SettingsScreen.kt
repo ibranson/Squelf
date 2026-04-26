@@ -10,6 +10,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -48,6 +50,8 @@ fun SettingsScreen(
     var wifiOnly by remember { mutableStateOf(initial.wifiOnlyUpload) }
     var isoAuto by remember { mutableStateOf(initial.isoAuto) }
     var showThumbnail by remember { mutableStateOf(initial.showThumbnail) }
+    var burstFps by remember { mutableStateOf(initial.burstFps) }
+    var burstCount by remember { mutableStateOf(initial.burstCount) }
 
     BackHandler { onDone() }
 
@@ -134,6 +138,54 @@ fun SettingsScreen(
             Switch(checked = showThumbnail, onCheckedChange = { showThumbnail = it })
         }
 
+        HorizontalDivider()
+
+        Text("Remote burst", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Press B once to fire a burst at the count and rate below.",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text("Rate", style = MaterialTheme.typography.labelMedium)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            listOf(1, 2, 3, 5).forEach { fps ->
+                val selected = burstFps == fps
+                FilledTonalButton(
+                    onClick = { burstFps = fps },
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = if (selected) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Text("${fps} fps")
+                }
+            }
+        }
+        Text("Count", style = MaterialTheme.typography.labelMedium)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            listOf(2, 3, 5, 10).forEach { count ->
+                val selected = burstCount == count
+                FilledTonalButton(
+                    onClick = { burstCount = count },
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = if (selected) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Text("$count")
+                }
+            }
+        }
+
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
@@ -153,7 +205,9 @@ fun SettingsScreen(
                             autoDatedFolder = autoDated,
                             wifiOnlyUpload = wifiOnly,
                             isoAuto = isoAuto,
-                            showThumbnail = showThumbnail
+                            showThumbnail = showThumbnail,
+                            burstFps = burstFps,
+                            burstCount = burstCount
                         )
                     )
                     onDone()

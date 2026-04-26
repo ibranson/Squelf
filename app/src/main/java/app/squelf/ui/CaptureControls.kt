@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import app.squelf.camera.CameraState
+import app.squelf.camera.FlashMode
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.ln
@@ -49,11 +50,17 @@ fun CaptureControls(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "%.1fx   EV %+.1f".format(state.zoomRatio, state.evStops),
-                color = Color.White,
-                style = MaterialTheme.typography.labelLarge
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "%.1fx   EV %+.1f".format(state.zoomRatio, state.evStops),
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelLarge
+                )
+                FlashIndicator(state.flashMode)
+            }
             TextButton(onClick = onToggleLevel) {
                 Text(
                     text = if (levelVisible) "LEVEL ON" else "LEVEL OFF",
@@ -108,6 +115,21 @@ fun CaptureControls(
             }
         }
     }
+}
+
+@Composable
+private fun FlashIndicator(mode: FlashMode) {
+    val (label, color) = when (mode) {
+        FlashMode.OFF -> "⚡ Off" to Color.White.copy(alpha = 0.4f)
+        FlashMode.AUTO -> "⚡ Auto" to Color.White
+        FlashMode.ON -> "⚡ On" to Color(0xFFFFEB3B)
+        FlashMode.TORCH -> "⚡ Torch" to Color(0xFFFFEB3B)
+    }
+    Text(
+        text = label,
+        color = color,
+        style = MaterialTheme.typography.labelLarge
+    )
 }
 
 @Composable

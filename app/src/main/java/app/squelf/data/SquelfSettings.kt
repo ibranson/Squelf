@@ -9,5 +9,7 @@ data class SquelfSettings(
     val autoDatedFolder: Boolean = true,
     val wifiOnlyUpload: Boolean = true,
     val isoAuto: Boolean = true,
-    val showThumbnail: Boolean = true
+    val showThumbnail: Boolean = true,
+    val burstFps: Int = 2,
+    val burstCount: Int = 5
 )
