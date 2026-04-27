@@ -16,6 +16,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
@@ -52,6 +54,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -91,6 +94,8 @@ private val MAPPED_KEYCODES = setOf(
     KeyEvent.KEYCODE_DPAD_DOWN,
     KeyEvent.KEYCODE_DPAD_LEFT,
     KeyEvent.KEYCODE_DPAD_RIGHT,
+    KeyEvent.KEYCODE_VOLUME_UP,
+    KeyEvent.KEYCODE_VOLUME_DOWN,
 )
 
 class MainActivity : ComponentActivity() {
@@ -115,6 +120,10 @@ class MainActivity : ComponentActivity() {
             KeyEvent.KEYCODE_DPAD_DOWN -> if (isDown) RemoteEvent.ZoomIn else null
             KeyEvent.KEYCODE_DPAD_LEFT -> if (isDown) RemoteEvent.EvDown else null
             KeyEvent.KEYCODE_DPAD_RIGHT -> if (isDown) RemoteEvent.EvUp else null
+            // Volume keys as a fallback shutter when the remote isn't handy.
+            // Consume both DOWN and UP so the system volume UI doesn't appear.
+            KeyEvent.KEYCODE_VOLUME_UP,
+            KeyEvent.KEYCODE_VOLUME_DOWN -> if (firstDown) RemoteEvent.Shutter else null
             else -> null
         }
         // Consume only mapped keys; BACK from a virtual device (system on-screen back / gesture)
@@ -211,9 +220,10 @@ class MainActivity : ComponentActivity() {
 
 /**
  * Hinge-up layout: portrait camera frame in a landscape cover display.
- * Camera preview occupies the left ~60% of the screen and acts as the
- * shutter (tap to capture). Right ~40% holds compact controls anchored
- * at the top, leaving the bottom-right clear for the camera lens cutouts.
+ * Camera preview occupies the left ~60% of the screen; tap on it to set
+ * focus + metering. Right ~40% holds compact controls anchored at the top
+ * (including the dedicated shutter), leaving the bottom-right clear for
+ * the camera lens cutouts.
  */
 @Composable
 private fun HingeUpLayout(
@@ -231,15 +241,19 @@ private fun HingeUpLayout(
     lastCaptureFile: File?,
     showThumbnail: Boolean,
     onShutter: () -> Unit,
+    onTapFocus: (androidx.compose.ui.geometry.Offset) -> Unit,
+    focusRingOffset: androidx.compose.ui.geometry.Offset?,
+    focusRingAlpha: Float,
     onSetZoom: (Float) -> Unit,
     onAdjustEv: (Float) -> Unit
 ) {
     val previewShape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
     Row(modifier = modifier) {
-        // Left: tappable preview area, framed with a thin white rounded
-        // border to signal that the preview itself is the shutter. The Box
-        // is aspect-locked to the camera frame (3:4 portrait) so FIT_CENTER
-        // doesn't need to letterbox inside the bordered area.
+        // Left: preview area, framed with a thin white rounded border. The
+        // Box is aspect-locked to the camera frame (3:4 portrait) so
+        // FIT_CENTER doesn't need to letterbox inside the bordered area.
+        // Tap = focus + meter at that point. Shutter lives on the controls
+        // strip and is also bound to the remote / volume keys.
         Box(
             modifier = Modifier
                 .fillMaxHeight()
@@ -247,7 +261,11 @@ private fun HingeUpLayout(
                 .aspectRatio(3f / 4f)
                 .border(width = 1.5.dp, color = Color.White, shape = previewShape)
                 .clip(previewShape)
-                .clickable(enabled = state.isReady && !state.isCapturing) { onShutter() }
+                .pointerInput(state.isReady) {
+                    if (state.isReady) {
+                        detectTapGestures { offset -> onTapFocus(offset) }
+                    }
+                }
         ) {
             if (hasCameraPermission) {
                 AndroidView(
@@ -314,6 +332,8 @@ private fun HingeUpLayout(
                 visible = state.isCapturing && !burstActive,
                 modifier = Modifier.matchParentSize()
             )
+
+            FocusRing(offset = focusRingOffset, alpha = focusRingAlpha)
         }
 
         // Right: controls strip — top portion holds controls, bottom is left
@@ -329,6 +349,7 @@ private fun HingeUpLayout(
                 state = state,
                 levelVisible = levelVisible,
                 onToggleLevel = onToggleLevel,
+                onShutter = onShutter,
                 onSetZoom = onSetZoom,
                 onAdjustEv = onAdjustEv,
                 modifier = Modifier.fillMaxWidth()
@@ -477,6 +498,30 @@ private fun ViewfinderScreen(
     var burstShotCount by remember { mutableStateOf(0) }
     var burstTotal by remember { mutableStateOf(BURST_MAX_SHOTS) }
 
+    // Tap-to-focus: previewView is captured at AndroidView creation and used
+    // to build CameraX MeteringPoints in PreviewView's pixel space (the tap
+    // offset comes in that same space because AndroidView matches the
+    // VF Box). focusRingOffset drives a small ring overlay; focusRingAlpha
+    // is animated 1→0 each tap and the offset is cleared at the end.
+    var previewView by remember { mutableStateOf<PreviewView?>(null) }
+    var focusRingOffset by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    val focusRingAlpha = remember { androidx.compose.animation.core.Animatable(0f) }
+    val onTapFocus: (androidx.compose.ui.geometry.Offset) -> Unit = { offset ->
+        previewView?.let { pv ->
+            val factory = pv.meteringPointFactory
+            cameraController.focusAt(factory.createPoint(offset.x, offset.y))
+        }
+        focusRingOffset = offset
+        scope.launch {
+            focusRingAlpha.snapTo(1f)
+            focusRingAlpha.animateTo(
+                targetValue = 0f,
+                animationSpec = androidx.compose.animation.core.tween(durationMillis = 1500)
+            )
+            focusRingOffset = null
+        }
+    }
+
     androidx.compose.runtime.DisposableEffect(Unit) {
         onDispose {
             // Don't leave the LED torch on when the user untents.
@@ -554,7 +599,10 @@ private fun ViewfinderScreen(
             // to the camera frame so the image fills the border exactly with
             // no edge cropping. Any leftover space falls outside the border.
             scaleType = PreviewView.ScaleType.FIT_CENTER
-        }.also(onBindPreview)
+        }.also {
+            previewView = it
+            onBindPreview(it)
+        }
     }
 
     if (quadrant == 0) {
@@ -580,6 +628,9 @@ private fun ViewfinderScreen(
                     }
                 }
             },
+            onTapFocus = onTapFocus,
+            focusRingOffset = focusRingOffset,
+            focusRingAlpha = focusRingAlpha.value,
             onSetZoom = cameraController::setZoom,
             onAdjustEv = cameraController::adjustEv
         )
@@ -610,12 +661,17 @@ private fun ViewfinderScreen(
         // the user's view), not inside it.
         Box(
             modifier = Modifier
+                .offset(y = (-18).dp)
                 .fillMaxWidth()
-                .padding(6.dp)
+                .padding(0.dp)
                 .aspectRatio(4f / 3f)
                 .border(width = 1.5.dp, color = Color.White, shape = previewShape)
                 .clip(previewShape)
-                .clickable(enabled = state.isReady && !state.isCapturing) { onShutterTap() }
+                .pointerInput(state.isReady) {
+                    if (state.isReady) {
+                        detectTapGestures { offset -> onTapFocus(offset) }
+                    }
+                }
         ) {
             if (hasCameraPermission) {
                 AndroidView(
@@ -669,6 +725,8 @@ private fun ViewfinderScreen(
                 visible = state.isCapturing && !burstActive,
                 modifier = Modifier.matchParentSize()
             )
+
+            FocusRing(offset = focusRingOffset, alpha = focusRingAlpha.value)
         }
 
         // Permission UI sits at the outer level (the bordered Box is a no-op
@@ -714,8 +772,8 @@ private fun ViewfinderScreen(
         }
 
         // The remote covers shutter and burst, so the bordered preview itself
-        // is the on-screen shutter; CaptureControls renders the rest of the
-        // controls without the round shutter button.
+        // VF tap is now reserved for tap-to-focus, so CaptureControls renders
+        // its dedicated round shutter button alongside the EV +/− pair.
         CaptureControls(
             state = state,
             levelVisible = levelVisible,
@@ -723,8 +781,35 @@ private fun ViewfinderScreen(
             onShutter = onShutterTap,
             onSetZoom = cameraController::setZoom,
             onAdjustEv = cameraController::adjustEv,
-            modifier = Modifier.matchParentSize(),
-            showShutter = false
+            modifier = Modifier.matchParentSize()
+        )
+    }
+}
+
+/**
+ * Small ring overlay that briefly marks where the user tapped to focus.
+ * Drawn directly onto a fillMaxSize Canvas so the ring center lands on the
+ * tap offset without any layout-modifier gymnastics. When [offset] is null
+ * (or alpha is 0) it draws nothing.
+ */
+@Composable
+private fun FocusRing(
+    offset: androidx.compose.ui.geometry.Offset?,
+    alpha: Float
+) {
+    if (offset == null || alpha <= 0f) return
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val radiusPx = with(density) { 28.dp.toPx() }
+    val strokePx = with(density) { 2.dp.toPx() }
+    val color = Color(0xFFFFEB3B).copy(alpha = alpha)
+    androidx.compose.foundation.Canvas(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        drawCircle(
+            color = color,
+            radius = radiusPx,
+            center = offset,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokePx)
         )
     }
 }

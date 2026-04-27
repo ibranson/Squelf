@@ -7,7 +7,9 @@ import android.provider.MediaStore
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.MeteringPoint
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -133,6 +135,14 @@ class RealCameraController(private val context: Context) : CameraController {
         pendingCaptureRotation = captureRotation
         preview.targetRotation = previewRotation
         imageCapture?.targetRotation = captureRotation
+    }
+
+    override fun focusAt(point: MeteringPoint) {
+        val cam = camera ?: return
+        // AF only — exposure stays under EV/auto-exposure control instead of
+        // jumping with each tap.
+        val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF).build()
+        runCatching { cam.cameraControl.startFocusAndMetering(action) }
     }
 
     override fun cycleFlash() {

@@ -42,6 +42,10 @@ class MockCameraController(private val context: Context) : CameraController {
         // Mock has no real preview surface; nothing to rotate.
     }
 
+    override fun focusAt(point: androidx.camera.core.MeteringPoint) {
+        // Mock has no real camera; nothing to focus.
+    }
+
     override fun cycleFlash() {
         val next = when (_state.value.flashMode) {
             FlashMode.OFF -> FlashMode.AUTO

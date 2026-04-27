@@ -1,5 +1,6 @@
 package app.squelf.camera
 
+import androidx.camera.core.MeteringPoint
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 
@@ -35,5 +36,6 @@ interface CameraController {
     // cancel that; the saved JPEG's orientation comes purely from ImageCapture's
     // targetRotation, which must match the actual physical device orientation.
     fun setTargetRotation(previewRotation: Int, captureRotation: Int)
+    fun focusAt(point: MeteringPoint)
     suspend fun capture(): CaptureResult
 }

@@ -1,11 +1,15 @@
 package app.squelf.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -43,16 +47,24 @@ fun CaptureControls(
     showShutter: Boolean = true
 ) {
     Box(modifier = modifier) {
+        // Info strip moves to TopCenter so the bottom cluster (slider,
+        // presets, EV/shutter row) can claim BottomCenter and butt up against
+        // the layout-bottom edge with zero padding. After the parent's
+        // graphicsLayer rotation, layout-top maps to:
+        //   q=90  (90° CW visual)  → user's right screen edge
+        //   q=270 (90° CCW visual) → user's left screen edge
+        // …both opposite the hinge, which is what we want.
         Row(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp),
+                .fillMaxHeight()
+                .padding(horizontal = 0.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.Top
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
@@ -62,21 +74,30 @@ fun CaptureControls(
                 )
                 FlashIndicator(state.flashMode)
             }
-            TextButton(onClick = onToggleLevel) {
-                Text(
-                    text = if (levelVisible) "LEVEL ON" else "LEVEL OFF",
-                    color = Color.White
-                )
-            }
+            // Plain Text instead of TextButton: TextButton has an internal
+            // defaultMinSize(minHeight = 40.dp) that can't be overridden from
+            // outside, so its content always sits ~16dp below same-row siblings.
+            // Color reflects state: full white when ON, dimmed when OFF —
+            // matches FlashIndicator's OFF/AUTO contrast.
+            Text(
+                text = if (levelVisible) "LEVEL ON" else "LEVEL OFF",
+                color = if (levelVisible) Color.White else Color.White.copy(alpha = 0.4f),
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.clickable { onToggleLevel() }
+            )
         }
 
+        // Bottom cluster anchored at layout-bottom with zero bottom padding so it
+        // sits flush against the layout-top edge — which after the parent's
+        // graphicsLayer rotation lands at the screen edge opposite the hinge
+        // for both hinge-side orientations.
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 15.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             Slider(
                 value = ln(state.zoomRatio),
@@ -154,7 +175,10 @@ private fun ShutterButton(enabled: Boolean, onClick: () -> Unit) {
         onClick = onClick,
         enabled = enabled,
         shape = CircleShape,
-        modifier = Modifier.size(72.dp),
+        // Sized to match the hinge-up layout's shutter so all postures share
+        // one button visual; keeps the hinge-side controls strip from
+        // dominating the screen.
+        modifier = Modifier.size(56.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = Color.White,
             contentColor = Color.Black,
@@ -164,22 +188,25 @@ private fun ShutterButton(enabled: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * Compact controls column for the hinge-up cover-display layout. Drops the
- * round shutter (the camera preview itself acts as the shutter via tap, and
- * the 8BitDo remote covers shutter/burst), and packs the rest of the
- * controls vertically so they fit in the right strip above the lens cutouts.
+ * Compact controls column for the hinge-up cover-display layout. Includes a
+ * dedicated shutter button (the VF tap is now reserved for tap-to-focus);
+ * the 8BitDo remote and volume keys also fire the shutter.
  */
 @Composable
 fun HingeUpControls(
     state: CameraState,
     levelVisible: Boolean,
     onToggleLevel: () -> Unit,
+    onShutter: () -> Unit,
     onSetZoom: (Float) -> Unit,
     onAdjustEv: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+        // No bottom padding: per spec, the cluster's relative bottom (the
+        // shutter button) butts up against whatever sits below it (thumbnail
+        // + spacer in HingeUpLayout) with zero gap.
+        modifier = modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 0.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Row(
@@ -265,6 +292,24 @@ fun HingeUpControls(
                     contentColor = Color.White
                 )
             ) { Text("EV+") }
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Button(
+                onClick = onShutter,
+                enabled = state.isReady && !state.isCapturing,
+                shape = CircleShape,
+                modifier = Modifier.size(56.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor = Color.Black,
+                    disabledContainerColor = Color.Gray
+                )
+            ) {}
         }
     }
 }
