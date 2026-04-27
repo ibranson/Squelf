@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -146,7 +147,10 @@ class MainActivity : ComponentActivity() {
 
                 val quadrant = rememberDisplayQuadrant()
 
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    containerColor = Color.Black
+                ) { innerPadding ->
                     BoxWithConstraints(
                         modifier = Modifier.padding(innerPadding).fillMaxSize()
                     ) {
@@ -361,11 +365,13 @@ private fun RotatePrompt(modifier: Modifier = Modifier) {
         ) {
             Text(
                 text = "Rotate the phone",
+                color = Color.White,
                 style = MaterialTheme.typography.headlineMedium,
                 textAlign = TextAlign.Center
             )
             Text(
                 text = "Hold the phone with the hinge up, left, or right — not down.",
+                color = Color.White,
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center
             )
@@ -386,11 +392,13 @@ private fun TentPrompt(
         ) {
             Text(
                 text = "Tent the phone",
+                color = Color.White,
                 style = MaterialTheme.typography.headlineMedium,
                 textAlign = TextAlign.Center
             )
             Text(
                 text = "Fold the phone into a tent with the rear cameras facing the subject.",
+                color = Color.White,
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center
             )
@@ -542,16 +550,10 @@ private fun ViewfinderScreen(
             // compression once the parent is rotated for the landscape hinge
             // orientations. TextureView respects them.
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-            // Hinge-up displays a portrait camera frame inside a landscape
-            // preview rectangle on the left side of the screen, so we want the
-            // full frame visible without cropping. Other orientations rotate
-            // the entire screen and the camera frame's aspect matches, so the
-            // default FILL_CENTER fills the screen edge-to-edge.
-            scaleType = if (quadrant == 0) {
-                PreviewView.ScaleType.FIT_CENTER
-            } else {
-                PreviewView.ScaleType.FILL_CENTER
-            }
+            // FIT_CENTER everywhere: the bordered preview Box is aspect-locked
+            // to the camera frame so the image fills the border exactly with
+            // no edge cropping. Any leftover space falls outside the border.
+            scaleType = PreviewView.ScaleType.FIT_CENTER
         }.also(onBindPreview)
     }
 
@@ -584,13 +586,94 @@ private fun ViewfinderScreen(
         return
     }
 
-    Box(modifier = modifier.background(Color.Black)) {
-        if (hasCameraPermission) {
-            AndroidView(
-                factory = previewFactory,
+    val previewShape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+    val onShutterTap = {
+        scope.launch {
+            val result = cameraController.capture()
+            if (result is CaptureResult.Success) {
+                lastCaptureFile = result.file
+            }
+        }
+        Unit
+    }
+    Box(
+        modifier = modifier.background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
+        // Bordered, tappable viewfinder. The parent's graphicsLayer rotation
+        // in framebuffer space combined with the user's physical phone
+        // rotation cancels out, so the layout aspect equals the perceived
+        // aspect: aspectRatio(4f/3f) in layout reads as 4:3 landscape on the
+        // rotated cover display, matching the camera frame. FIT_CENTER on
+        // the inner PreviewView keeps the full FOV visible; leftover cover
+        // display space falls outside the border (top/bottom letterbox in
+        // the user's view), not inside it.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(6.dp)
+                .aspectRatio(4f / 3f)
+                .border(width = 1.5.dp, color = Color.White, shape = previewShape)
+                .clip(previewShape)
+                .clickable(enabled = state.isReady && !state.isCapturing) { onShutterTap() }
+        ) {
+            if (hasCameraPermission) {
+                AndroidView(
+                    factory = previewFactory,
+                    modifier = Modifier.matchParentSize()
+                )
+            }
+
+            if (levelVisible && !state.isCapturing) {
+                HorizonLine(rollDegrees = roll, modifier = Modifier.matchParentSize())
+            }
+
+            if (!state.isReady) {
+                Text(
+                    text = "Camera starting…",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+
+            if (burstActive) {
+                val targetAlpha = if (state.isCapturing) 0.45f else 0.22f
+                val pulseAlpha by animateFloatAsState(
+                    targetValue = targetAlpha,
+                    label = "burst-b-pulse"
+                )
+                val burstColor = Color(0xFFE53935)
+                Text(
+                    text = "B",
+                    color = burstColor.copy(alpha = pulseAlpha),
+                    fontSize = 360.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    modifier = Modifier.align(Alignment.Center)
+                )
+                LinearProgressIndicator(
+                    progress = { burstShotCount / burstTotal.coerceAtLeast(1).toFloat() },
+                    color = burstColor,
+                    trackColor = burstColor.copy(alpha = 0.2f),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .height(4.dp)
+                )
+            }
+
+            CaptureFlash(
+                visible = state.isCapturing && !burstActive,
                 modifier = Modifier.matchParentSize()
             )
-        } else {
+        }
+
+        // Permission UI sits at the outer level (the bordered Box is a no-op
+        // if there's no permission yet).
+        if (!hasCameraPermission) {
             Column(
                 modifier = Modifier.align(Alignment.Center).padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -607,52 +690,13 @@ private fun ViewfinderScreen(
             }
         }
 
-        if (levelVisible && !state.isCapturing) {
-            HorizonLine(rollDegrees = roll, modifier = Modifier.matchParentSize())
-        }
-
-        if (!state.isReady) {
-            Text(
-                text = "Camera starting…",
-                color = Color.White,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-            )
-        }
-
-        if (burstActive) {
-            val targetAlpha = if (state.isCapturing) 0.45f else 0.22f
-            val pulseAlpha by animateFloatAsState(
-                targetValue = targetAlpha,
-                label = "burst-b-pulse"
-            )
-            val burstColor = Color(0xFFE53935) // red 600
-            Text(
-                text = "B",
-                color = burstColor.copy(alpha = pulseAlpha),
-                fontSize = 360.sp,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                modifier = Modifier.align(Alignment.Center)
-            )
-            LinearProgressIndicator(
-                progress = { burstShotCount / burstTotal.coerceAtLeast(1).toFloat() },
-                color = burstColor,
-                trackColor = burstColor.copy(alpha = 0.2f),
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .height(4.dp)
-            )
-        }
-
+        // Thumbnail anchored to the rotated container's TopStart so it sits
+        // in the empty cover-display space outside the bordered viewfinder.
         lastCaptureFile?.let { file ->
             Column(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(top = 48.dp, start = 12.dp)
+                    .padding(top = 12.dp, start = 12.dp)
             ) {
                 if (showThumbnail) {
                     ThumbnailPreview(
@@ -669,26 +713,18 @@ private fun ViewfinderScreen(
             }
         }
 
+        // The remote covers shutter and burst, so the bordered preview itself
+        // is the on-screen shutter; CaptureControls renders the rest of the
+        // controls without the round shutter button.
         CaptureControls(
             state = state,
             levelVisible = levelVisible,
             onToggleLevel = { levelVisible = !levelVisible },
-            onShutter = {
-                scope.launch {
-                    val result = cameraController.capture()
-                    if (result is CaptureResult.Success) {
-                        lastCaptureFile = result.file
-                    }
-                }
-            },
+            onShutter = onShutterTap,
             onSetZoom = cameraController::setZoom,
             onAdjustEv = cameraController::adjustEv,
-            modifier = Modifier.matchParentSize()
-        )
-
-        CaptureFlash(
-            visible = state.isCapturing && !burstActive,
-            modifier = Modifier.matchParentSize()
+            modifier = Modifier.matchParentSize(),
+            showShutter = false
         )
     }
 }

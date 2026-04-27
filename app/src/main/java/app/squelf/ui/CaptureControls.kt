@@ -39,14 +39,15 @@ fun CaptureControls(
     onShutter: () -> Unit,
     onSetZoom: (Float) -> Unit,
     onAdjustEv: (Float) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showShutter: Boolean = true
 ) {
     Box(modifier = modifier) {
         Row(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .padding(8.dp),
+                .padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -73,7 +74,7 @@ fun CaptureControls(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                .padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -110,7 +111,9 @@ fun CaptureControls(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 AdjustButton("EV−") { onAdjustEv(-EV_STEP) }
-                ShutterButton(enabled = !state.isCapturing, onClick = onShutter)
+                if (showShutter) {
+                    ShutterButton(enabled = !state.isCapturing, onClick = onShutter)
+                }
                 AdjustButton("EV+") { onAdjustEv(EV_STEP) }
             }
         }
