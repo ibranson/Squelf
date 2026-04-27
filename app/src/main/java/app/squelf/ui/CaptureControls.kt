@@ -160,6 +160,108 @@ private fun ShutterButton(enabled: Boolean, onClick: () -> Unit) {
     ) {}
 }
 
+/**
+ * Compact controls column for the hinge-up cover-display layout. Drops the
+ * round shutter (the camera preview itself acts as the shutter via tap, and
+ * the 8BitDo remote covers shutter/burst), and packs the rest of the
+ * controls vertically so they fit in the right strip above the lens cutouts.
+ */
+@Composable
+fun HingeUpControls(
+    state: CameraState,
+    levelVisible: Boolean,
+    onToggleLevel: () -> Unit,
+    onSetZoom: (Float) -> Unit,
+    onAdjustEv: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "%.1fx  EV %+.1f".format(state.zoomRatio, state.evStops),
+                color = Color.White,
+                style = MaterialTheme.typography.labelMedium
+            )
+            FlashIndicator(state.flashMode)
+        }
+        TextButton(
+            onClick = onToggleLevel,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                horizontal = 8.dp, vertical = 4.dp
+            )
+        ) {
+            Text(
+                text = if (levelVisible) "LEVEL ON" else "LEVEL OFF",
+                color = Color.White
+            )
+        }
+        Slider(
+            value = ln(state.zoomRatio),
+            onValueChange = { onSetZoom(exp(it)) },
+            valueRange = ln(state.minZoom)..ln(state.maxZoom),
+            modifier = Modifier.fillMaxWidth(),
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White,
+                activeTrackColor = Color.White,
+                inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+            )
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            ZoomPresets.forEach { ratio ->
+                val selected = abs(state.zoomRatio - ratio) < 0.05f
+                FilledTonalButton(
+                    onClick = { onSetZoom(ratio) },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 6.dp, vertical = 2.dp
+                    ),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = if (selected) Color.White.copy(alpha = 0.4f)
+                        else Color.White.copy(alpha = 0.12f),
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text("${ratio.toInt()}x")
+                }
+            }
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            FilledTonalButton(
+                onClick = { onAdjustEv(-EV_STEP) },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    horizontal = 8.dp, vertical = 4.dp
+                ),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = Color.White.copy(alpha = 0.2f),
+                    contentColor = Color.White
+                )
+            ) { Text("EV−") }
+            FilledTonalButton(
+                onClick = { onAdjustEv(EV_STEP) },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    horizontal = 8.dp, vertical = 4.dp
+                ),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = Color.White.copy(alpha = 0.2f),
+                    contentColor = Color.White
+                )
+            ) { Text("EV+") }
+        }
+    }
+}
+
 @Composable
 fun CaptureFlash(visible: Boolean, modifier: Modifier = Modifier) {
     if (visible) {

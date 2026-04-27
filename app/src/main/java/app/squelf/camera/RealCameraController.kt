@@ -36,6 +36,9 @@ class RealCameraController(private val context: Context) : CameraController {
     private var imageCapture: ImageCapture? = null
     private val preview: Preview = Preview.Builder().build()
 
+    @Volatile private var pendingPreviewRotation: Int? = null
+    @Volatile private var pendingCaptureRotation: Int? = null
+
     suspend fun bind(lifecycleOwner: LifecycleOwner, previewView: PreviewView) {
         val provider = suspendCancellableCoroutine<ProcessCameraProvider> { cont ->
             val future = ProcessCameraProvider.getInstance(context)
@@ -56,6 +59,10 @@ class RealCameraController(private val context: Context) : CameraController {
             preview, capture
         )
         camera = cam
+
+        // If rotations were requested before bind, apply them now.
+        pendingPreviewRotation?.let { preview.targetRotation = it }
+        pendingCaptureRotation?.let { capture.targetRotation = it }
 
         val zoomState = cam.cameraInfo.zoomState.value
         val expState = cam.cameraInfo.exposureState
@@ -119,6 +126,13 @@ class RealCameraController(private val context: Context) : CameraController {
             }
         }
         _state.update { it.copy(flashMode = mode) }
+    }
+
+    override fun setTargetRotation(previewRotation: Int, captureRotation: Int) {
+        pendingPreviewRotation = previewRotation
+        pendingCaptureRotation = captureRotation
+        preview.targetRotation = previewRotation
+        imageCapture?.targetRotation = captureRotation
     }
 
     override fun cycleFlash() {

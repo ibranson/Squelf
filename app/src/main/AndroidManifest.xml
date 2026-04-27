@@ -20,8 +20,10 @@
         android:theme="@style/Theme.Squelf">
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:exported="true"
             android:label="@string/app_name"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.Squelf">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

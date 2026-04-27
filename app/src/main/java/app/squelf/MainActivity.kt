@@ -14,9 +14,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -37,7 +43,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -56,9 +64,11 @@ import app.squelf.posture.hingePostureFlow
 import app.squelf.remote.RemoteEvent
 import app.squelf.ui.CaptureControls
 import app.squelf.ui.CaptureFlash
+import app.squelf.ui.HingeUpControls
 import app.squelf.ui.HorizonLine
 import app.squelf.ui.SettingsScreen
 import app.squelf.ui.ThumbnailPreview
+import app.squelf.ui.rememberDisplayQuadrant
 import app.squelf.ui.rememberRollDegrees
 import app.squelf.ui.theme.SquelfTheme
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -134,34 +144,231 @@ class MainActivity : ComponentActivity() {
                 )
                 var showSettings by remember { mutableStateOf(false) }
 
+                val quadrant = rememberDisplayQuadrant()
+
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    val contentModifier = Modifier.padding(innerPadding).fillMaxSize()
-                    when {
-                        posture.isTented -> ViewfinderScreen(
-                            cameraController = cameraController,
-                            settingsRepository = settingsRepository,
-                            remoteEvents = remoteEvents,
-                            onBindPreview = { previewView ->
-                                if (cameraController is RealCameraController) {
-                                    lifecycleScope.launch {
-                                        cameraController.bind(this@MainActivity, previewView)
-                                    }
-                                }
-                            },
-                            modifier = contentModifier
-                        )
-                        showSettings -> SettingsScreen(
-                            repository = settingsRepository,
-                            onDone = { showSettings = false },
-                            modifier = contentModifier
-                        )
-                        else -> TentPrompt(
-                            onOpenSettings = { showSettings = true },
-                            modifier = contentModifier
-                        )
+                    BoxWithConstraints(
+                        modifier = Modifier.padding(innerPadding).fillMaxSize()
+                    ) {
+                        val isLandscape = quadrant == 90 || quadrant == 270
+                        val contentWidth = if (isLandscape) maxHeight else maxWidth
+                        val contentHeight = if (isLandscape) maxWidth else maxHeight
+                        Box(
+                            modifier = Modifier
+                                .size(contentWidth, contentHeight)
+                                .align(Alignment.Center)
+                                // Quadrant is the gravity-snapped angle of device "down"
+                            // measured from default-portrait-down. Activity is locked
+                            // to portrait, so the framebuffer renders as if the device
+                            // is upright; rotating content by +quadrant cancels the
+                            // device tilt so content reads upright to the viewer.
+                            .graphicsLayer { rotationZ = quadrant.toFloat() }
+                        ) {
+                            val contentModifier = Modifier.fillMaxSize()
+                            // Hinge-down (quadrant 180) is unsupported — UI rotation
+                            // and camera handling don't behave well there. Prompt the
+                            // user to rotate to one of the three valid orientations.
+                            val isUpsideDown = quadrant == 180
+                            when {
+                                posture.isTented && isUpsideDown -> RotatePrompt(
+                                    modifier = contentModifier
+                                )
+                                posture.isTented -> ViewfinderScreen(
+                                    cameraController = cameraController,
+                                    settingsRepository = settingsRepository,
+                                    remoteEvents = remoteEvents,
+                                    quadrant = quadrant,
+                                    onBindPreview = { previewView ->
+                                        if (cameraController is RealCameraController) {
+                                            lifecycleScope.launch {
+                                                cameraController.bind(this@MainActivity, previewView)
+                                            }
+                                        }
+                                    },
+                                    modifier = contentModifier
+                                )
+                                showSettings -> SettingsScreen(
+                                    repository = settingsRepository,
+                                    onDone = { showSettings = false },
+                                    modifier = contentModifier
+                                )
+                                else -> TentPrompt(
+                                    onOpenSettings = { showSettings = true },
+                                    modifier = contentModifier
+                                )
+                            }
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Hinge-up layout: portrait camera frame in a landscape cover display.
+ * Camera preview occupies the left ~60% of the screen and acts as the
+ * shutter (tap to capture). Right ~40% holds compact controls anchored
+ * at the top, leaving the bottom-right clear for the camera lens cutouts.
+ */
+@Composable
+private fun HingeUpLayout(
+    modifier: Modifier,
+    hasCameraPermission: Boolean,
+    requestPermission: () -> Unit,
+    previewFactory: (android.content.Context) -> PreviewView,
+    state: app.squelf.camera.CameraState,
+    roll: Float,
+    levelVisible: Boolean,
+    onToggleLevel: () -> Unit,
+    burstActive: Boolean,
+    burstShotCount: Int,
+    burstTotal: Int,
+    lastCaptureFile: File?,
+    showThumbnail: Boolean,
+    onShutter: () -> Unit,
+    onSetZoom: (Float) -> Unit,
+    onAdjustEv: (Float) -> Unit
+) {
+    val previewShape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+    Row(modifier = modifier) {
+        // Left: tappable preview area, framed with a thin white rounded
+        // border to signal that the preview itself is the shutter. The Box
+        // is aspect-locked to the camera frame (3:4 portrait) so FIT_CENTER
+        // doesn't need to letterbox inside the bordered area.
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .padding(6.dp)
+                .aspectRatio(3f / 4f)
+                .border(width = 1.5.dp, color = Color.White, shape = previewShape)
+                .clip(previewShape)
+                .clickable(enabled = state.isReady && !state.isCapturing) { onShutter() }
+        ) {
+            if (hasCameraPermission) {
+                AndroidView(
+                    factory = previewFactory,
+                    modifier = Modifier.matchParentSize()
+                )
+            } else {
+                Column(
+                    modifier = Modifier.align(Alignment.Center).padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Camera permission required",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Button(onClick = requestPermission) { Text("Grant") }
+                }
+            }
+
+            if (levelVisible && !state.isCapturing) {
+                HorizonLine(rollDegrees = roll, modifier = Modifier.matchParentSize())
+            }
+
+            if (!state.isReady) {
+                Text(
+                    text = "Camera starting…",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+
+            if (burstActive) {
+                val targetAlpha = if (state.isCapturing) 0.45f else 0.22f
+                val pulseAlpha by animateFloatAsState(
+                    targetValue = targetAlpha,
+                    label = "burst-b-pulse"
+                )
+                val burstColor = Color(0xFFE53935)
+                Text(
+                    text = "B",
+                    color = burstColor.copy(alpha = pulseAlpha),
+                    fontSize = 240.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    modifier = Modifier.align(Alignment.Center)
+                )
+                LinearProgressIndicator(
+                    progress = { burstShotCount / burstTotal.coerceAtLeast(1).toFloat() },
+                    color = burstColor,
+                    trackColor = burstColor.copy(alpha = 0.2f),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .height(4.dp)
+                )
+            }
+
+            CaptureFlash(
+                visible = state.isCapturing && !burstActive,
+                modifier = Modifier.matchParentSize()
+            )
+        }
+
+        // Right: controls strip — top portion holds controls, bottom is left
+        // clear for the camera lens cutouts at the bottom-right of the display.
+        // weight(1f) absorbs whatever width is left after the 3:4 preview
+        // claims its (height-derived) width.
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+        ) {
+            HingeUpControls(
+                state = state,
+                levelVisible = levelVisible,
+                onToggleLevel = onToggleLevel,
+                onSetZoom = onSetZoom,
+                onAdjustEv = onAdjustEv,
+                modifier = Modifier.fillMaxWidth()
+            )
+            lastCaptureFile?.let { file ->
+                if (showThumbnail) {
+                    ThumbnailPreview(
+                        file = file,
+                        modifier = Modifier
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .size(width = 96.dp, height = 128.dp)
+                    )
+                }
+            }
+            // Spacer pushes any remaining content up; bottom of strip stays
+            // empty so the lens cutouts (bottom-right ~40% of the cover
+            // display) remain unobstructed by UI.
+            androidx.compose.foundation.layout.Spacer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun RotatePrompt(modifier: Modifier = Modifier) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Text(
+                text = "Rotate the phone",
+                style = MaterialTheme.typography.headlineMedium,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = "Hold the phone with the hinge up, left, or right — not down.",
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
@@ -199,9 +406,46 @@ private fun ViewfinderScreen(
     cameraController: CameraController,
     settingsRepository: SettingsRepository,
     remoteEvents: SharedFlow<RemoteEvent>,
+    quadrant: Int,
     onBindPreview: (PreviewView) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Activity is locked to portrait, so Display.getRotation() always reports 0
+    // and CameraX delivers portrait-aspect frames. When the user rotates the
+    // phone to a landscape posture our content container also rotates (via
+    // graphicsLayer in the parent), but the PreviewView inside ends up with
+    // landscape dimensions. Without telling CameraX about that, the portrait
+    // frame gets stretched to fill, squashing the image horizontally.
+    //
+    // Push the gravity-derived quadrant into CameraX's targetRotation so it
+    // delivers frames whose aspect matches the rotated container.
+    // ImageCapture's targetRotation drives the EXIF orientation written into
+    // the saved JPEG. It must describe the actual physical device orientation
+    // (Surface.ROTATION_* is the rotation of the displayed content, which is
+    // the inverse of the physical rotation):
+    //   hinge-left  (quadrant 90, device 90° CCW physical) → ROTATION_270
+    //   hinge-right (quadrant 270, device 90° CW physical) → ROTATION_90
+    val captureRotation = when (quadrant) {
+        90 -> android.view.Surface.ROTATION_270
+        180 -> android.view.Surface.ROTATION_180
+        270 -> android.view.Surface.ROTATION_90
+        else -> android.view.Surface.ROTATION_0
+    }
+    // Preview's targetRotation rotates the displayed frame. The parent's
+    // graphicsLayer already rotates the entire PreviewView visually, so the
+    // preview rotation must be the inverse of capture's so the two cancel
+    // and the camera image reads upright. (UI siblings inside the same
+    // graphicsLayer parent are unaffected — they only get the graphicsLayer
+    // rotation, which is correct for them.)
+    val previewRotation = when (quadrant) {
+        90 -> android.view.Surface.ROTATION_90
+        180 -> android.view.Surface.ROTATION_180
+        270 -> android.view.Surface.ROTATION_270
+        else -> android.view.Surface.ROTATION_0
+    }
+    LaunchedEffect(previewRotation, captureRotation) {
+        cameraController.setTargetRotation(previewRotation, captureRotation)
+    }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val state by cameraController.state.collectAsStateWithLifecycle()
@@ -291,12 +535,59 @@ private fun ViewfinderScreen(
         }
     }
 
+    val previewFactory: (android.content.Context) -> PreviewView = { ctx ->
+        PreviewView(ctx).apply {
+            // SurfaceView (PERFORMANCE) renders to its window rect and ignores
+            // Compose graphicsLayer transforms, which produces horizontal
+            // compression once the parent is rotated for the landscape hinge
+            // orientations. TextureView respects them.
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            // Hinge-up displays a portrait camera frame inside a landscape
+            // preview rectangle on the left side of the screen, so we want the
+            // full frame visible without cropping. Other orientations rotate
+            // the entire screen and the camera frame's aspect matches, so the
+            // default FILL_CENTER fills the screen edge-to-edge.
+            scaleType = if (quadrant == 0) {
+                PreviewView.ScaleType.FIT_CENTER
+            } else {
+                PreviewView.ScaleType.FILL_CENTER
+            }
+        }.also(onBindPreview)
+    }
+
+    if (quadrant == 0) {
+        HingeUpLayout(
+            modifier = modifier.background(Color.Black),
+            hasCameraPermission = hasCameraPermission,
+            requestPermission = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+            previewFactory = previewFactory,
+            state = state,
+            roll = roll,
+            levelVisible = levelVisible,
+            onToggleLevel = { levelVisible = !levelVisible },
+            burstActive = burstActive,
+            burstShotCount = burstShotCount,
+            burstTotal = burstTotal,
+            lastCaptureFile = lastCaptureFile,
+            showThumbnail = showThumbnail,
+            onShutter = {
+                scope.launch {
+                    val result = cameraController.capture()
+                    if (result is CaptureResult.Success) {
+                        lastCaptureFile = result.file
+                    }
+                }
+            },
+            onSetZoom = cameraController::setZoom,
+            onAdjustEv = cameraController::adjustEv
+        )
+        return
+    }
+
     Box(modifier = modifier.background(Color.Black)) {
         if (hasCameraPermission) {
             AndroidView(
-                factory = { ctx ->
-                    PreviewView(ctx).also(onBindPreview)
-                },
+                factory = previewFactory,
                 modifier = Modifier.matchParentSize()
             )
         } else {

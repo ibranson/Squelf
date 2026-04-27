@@ -1,6 +1,9 @@
 package app.squelf.ui
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -48,7 +51,15 @@ fun ThumbnailPreview(file: File, modifier: Modifier = Modifier) {
                 bounds.outHeight / THUMB_MAX_HEIGHT_PX
             ).coerceAtLeast(1)
             val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-            BitmapFactory.decodeFile(file.absolutePath, opts)?.asImageBitmap()
+            val raw = BitmapFactory.decodeFile(file.absolutePath, opts) ?: return@withContext null
+            val rotation = readExifRotation(file.absolutePath)
+            val rotated = if (rotation != 0f) {
+                val matrix = Matrix().apply { postRotate(rotation) }
+                Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, matrix, true).also {
+                    if (it !== raw) raw.recycle()
+                }
+            } else raw
+            rotated.asImageBitmap()
         }
     }
 
@@ -65,5 +76,22 @@ fun ThumbnailPreview(file: File, modifier: Modifier = Modifier) {
                 modifier = Modifier.fillMaxSize()
             )
         }
+    }
+}
+
+private fun readExifRotation(path: String): Float {
+    return try {
+        val exif = ExifInterface(path)
+        when (exif.getAttributeInt(
+            ExifInterface.TAG_ORIENTATION,
+            ExifInterface.ORIENTATION_NORMAL
+        )) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+    } catch (_: Exception) {
+        0f
     }
 }

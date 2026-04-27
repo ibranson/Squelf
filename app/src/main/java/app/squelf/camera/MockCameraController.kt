@@ -38,6 +38,10 @@ class MockCameraController(private val context: Context) : CameraController {
         _state.update { it.copy(flashMode = mode) }
     }
 
+    override fun setTargetRotation(previewRotation: Int, captureRotation: Int) {
+        // Mock has no real preview surface; nothing to rotate.
+    }
+
     override fun cycleFlash() {
         val next = when (_state.value.flashMode) {
             FlashMode.OFF -> FlashMode.AUTO

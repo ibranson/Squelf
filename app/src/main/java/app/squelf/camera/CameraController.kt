@@ -30,5 +30,10 @@ interface CameraController {
     fun adjustEv(delta: Float)
     fun setFlashMode(mode: FlashMode)
     fun cycleFlash()
+    // Preview and capture need separate rotations: the PreviewView is rotated
+    // by Compose graphicsLayer in the parent, so Preview's targetRotation must
+    // cancel that; the saved JPEG's orientation comes purely from ImageCapture's
+    // targetRotation, which must match the actual physical device orientation.
+    fun setTargetRotation(previewRotation: Int, captureRotation: Int)
     suspend fun capture(): CaptureResult
 }
