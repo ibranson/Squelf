@@ -216,24 +216,28 @@ fun HingeUpControls(
                 inactiveTrackColor = Color.White.copy(alpha = 0.3f)
             )
         )
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            ZoomPresets.forEach { ratio ->
-                val selected = abs(state.zoomRatio - ratio) < 0.05f
-                FilledTonalButton(
-                    onClick = { onSetZoom(ratio) },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        horizontal = 6.dp, vertical = 2.dp
-                    ),
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = if (selected) Color.White.copy(alpha = 0.4f)
-                        else Color.White.copy(alpha = 0.12f),
-                        contentColor = Color.White
-                    )
-                ) {
-                    Text("${ratio.toInt()}x")
+        // Two rows of zoom presets so all four fit in the narrow right strip
+        // without clipping (the strip is too tight for a single 4-button row).
+        ZoomPresets.chunked(2).forEach { rowRatios ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                rowRatios.forEach { ratio ->
+                    val selected = abs(state.zoomRatio - ratio) < 0.05f
+                    FilledTonalButton(
+                        onClick = { onSetZoom(ratio) },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            horizontal = 6.dp, vertical = 2.dp
+                        ),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = if (selected) Color.White.copy(alpha = 0.4f)
+                            else Color.White.copy(alpha = 0.12f),
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text("${ratio.toInt()}x")
+                    }
                 }
             }
         }
